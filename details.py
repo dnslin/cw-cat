@@ -1,7 +1,6 @@
 # 获取作品详情
 import requests
 from lxml import etree
-import logging
 import json
 # https://www.ciweimao.com/book/100420810
 
@@ -69,7 +68,7 @@ def get_book_data(url):
     }
 
 # 示例用法
-url = 'https://www.ciweimao.com/book/100420810'
+url = 'https://www.ciweimao.com/book/100019863'
 book_data = get_book_data(url)
 # 转为 json
 

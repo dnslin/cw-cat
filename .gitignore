@@ -1,0 +1,6 @@
+*.pyc
+.vsocode
+__pycache__
+*.egg-info
+logs
+settings.json
