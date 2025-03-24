@@ -1,3 +1,12 @@
+import os
+
+# 获取项目根目录的绝对路径
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# 设置数据库绝对路径
+DB_NAME = os.path.join(BASE_DIR, "ciweimao.db")
+
+# 其他配置保持不变
 PROXIES = [
     "http://dnslin:ReZTDC2Pn5kNur@cn-wuhan-1.wjy.me:10288",
     # 添加更多代理
@@ -10,5 +19,7 @@ PROXIES = [
     "http://dnslin:ReZTDC2Pn5kNur@20.189.96.242:10288",
 ]
 
-DB_NAME = "ciweimao.db"
-LOG_PATH = "logs/ciweimao.log"
+LOG_PATH = os.path.join(BASE_DIR, "logs", "ciweimao.log")
+
+# 确保日志目录存在
+os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)

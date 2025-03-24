@@ -145,11 +145,31 @@ async def process_pages(
                     )
                 )
 
-                # 保存到数据库
-                saved_count = db.save_books(books_data)
-                pbar.set_description(f"第 {page} 页成功保存 {saved_count} 条记录")
-                pbar.update(1)
-                logger.info(f"第 {page} 页成功保存 {saved_count} 条记录")
+                # 添加调试信息
+                logger.info(f"第 {page} 页获取到 {len(books_data)} 条数据")
+                if books_data:
+                    logger.debug(f"第一条数据: {books_data[0]}")
+                else:
+                    logger.warning(f"第 {page} 页没有获取到数据")
+                    continue
+
+                try:
+                    logger.info(f"保存第 {page} 页数据到数据库")
+                    # 保存到数据库
+                    saved_count = db.save_books(books_data)
+
+                    # 验证是否真的保存成功
+                    total_count = len(db.get_all_books())
+                    logger.info(f"数据库当前总记录数: {total_count}")
+
+                    pbar.set_description(f"第 {page} 页成功保存 {saved_count} 条记录")
+                    pbar.update(1)
+                    logger.info(f"第 {page} 页成功保存 {saved_count} 条记录")
+                except Exception as e:
+                    logger.error(f"保存第 {page} 页数据时出错: {str(e)}")
+                    import traceback
+
+                    logger.error(traceback.format_exc())
 
     logger.info("所有页面处理完成")
 
