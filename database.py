@@ -38,12 +38,13 @@ class Database:
                         author_url TEXT,
                         word_count TEXT,
                         update_time TEXT,
+                        detail_crawled INTEGER DEFAULT 0,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     )
                 """
                 )
 
-                # 创建书籍详情表
+                # 创建书籍详情表 - 使用正确的扁平化结构
                 cursor.execute(
                     """
                     CREATE TABLE IF NOT EXISTS book_details (
@@ -57,20 +58,28 @@ class Database:
                         last_update TEXT,
                         status TEXT,
                         tags TEXT,
-                        stats TEXT,
-                        detail_stats TEXT,
+                        
+                        -- 统计信息字段
+                        total_hits INTEGER,
+                        total_favor INTEGER,
+                        total_word INTEGER,
+                        
+                        -- 详细信息字段
+                        total_recommend INTEGER,
+                        week_hits INTEGER,
+                        mouth_hits INTEGER,
+                        week_recommend INTEGER,
+                        mouth_recommend INTEGER,
+                        book_type TEXT,
+                        word_count TEXT,
+                        chapter_count INTEGER,
+                        first_publish_status TEXT,
+                        
                         is_crawled INTEGER DEFAULT 1,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         FOREIGN KEY (book_id) REFERENCES books (id)
                     )
                 """
-                )
-
-                # 在books表中添加是否爬取详情的标志
-                cursor.execute(
-                    """
-                    ALTER TABLE books ADD COLUMN detail_crawled INTEGER DEFAULT 0
-                    """
                 )
 
                 conn.commit()
@@ -190,25 +199,44 @@ class Database:
             return []
 
     def save_book_detail(self, book_id, book_url, detail_data):
-        """保存书籍详情信息"""
+        """保存书籍详情信息，使用扁平化字段结构"""
         try:
-            # 将字典转换为JSON字符串
-            stats_json = json.dumps(detail_data.get("stats", {}), ensure_ascii=False)
-            detail_stats_json = json.dumps(
-                detail_data.get("detail_stats", {}), ensure_ascii=False
-            )
+            # 从detail_data中提取各个字段
             tags_json = json.dumps(detail_data.get("tags", []), ensure_ascii=False)
+
+            # 提取stats字段的数据
+            stats = detail_data.get("stats", {})
+            total_hits = self._extract_number(stats.get("总点击", "0"))
+            total_favor = self._extract_number(stats.get("总收藏", "0"))
+            total_word = self._extract_number(stats.get("总字数", "0"))
+
+            # 提取detail_stats字段的数据
+            detail_stats = detail_data.get("detail_stats", {})
+            total_recommend = self._extract_number(detail_stats.get("总推荐", "0"))
+            week_hits = self._extract_number(detail_stats.get("周点击", "0"))
+            mouth_hits = self._extract_number(detail_stats.get("月点击", "0"))
+            week_recommend = self._extract_number(detail_stats.get("周推荐", "0"))
+            mouth_recommend = self._extract_number(detail_stats.get("月点击", "0"))
+            book_type = detail_stats.get("小说类别", "")
+            word_count = detail_stats.get("完成字数", "")
+            chapter_count = self._extract_number(detail_stats.get("章节", "0"))
+            first_publish_status = detail_stats.get("首发状态", "")
 
             with sqlite3.connect(self.db_name) as conn:
                 cursor = conn.cursor()
 
-                # 插入详情数据
+                # 插入详情数据 - 修正字段顺序和数量
                 cursor.execute(
                     """
                     INSERT OR REPLACE INTO book_details (
                         book_id, book_url, title, author, author_id,
-                        description, last_update, status, tags, stats, detail_stats
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        description, last_update, status, tags,
+                        total_hits, total_favor, total_word,
+                        total_recommend, week_hits, mouth_hits, 
+                        week_recommend, mouth_recommend,
+                        book_type, word_count, chapter_count, 
+                        first_publish_status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         book_id,
@@ -220,8 +248,18 @@ class Database:
                         detail_data.get("last_update", ""),
                         detail_data.get("status", ""),
                         tags_json,
-                        stats_json,
-                        detail_stats_json,
+                        total_hits,
+                        total_favor,
+                        total_word,
+                        total_recommend,
+                        week_hits,
+                        mouth_hits,
+                        week_recommend,
+                        mouth_recommend,
+                        book_type,
+                        word_count,
+                        chapter_count,
+                        first_publish_status,
                     ),
                 )
 
@@ -241,6 +279,22 @@ class Database:
             logger.error(f"保存书籍详情失败 {book_url}: {str(e)}")
             logger.error(traceback.format_exc())
             return False
+
+    def _extract_number(self, text):
+        """从字符串中提取数字"""
+        if not text:
+            return 0
+
+        try:
+            # 移除非数字字符，保留小数点
+            text = "".join(c for c in text if c.isdigit() or c == ".")
+            if text:
+                if "." in text:
+                    return float(text)
+                return int(text)
+            return 0
+        except:
+            return 0
 
     def is_detail_exists(self, book_url):
         """检查书籍详情是否已存在"""

@@ -3,7 +3,7 @@ import random
 import traceback
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
-import json
+import sqlite3
 
 from database import Database
 from details import get_book_data
@@ -20,8 +20,9 @@ def get_valid_proxy(proxies_list):
         logger.warning("没有可用代理")
         return None
 
-    while proxies_list:
-        proxy = random.choice(proxies_list)
+    proxy_list = proxies_list.copy()
+    while proxy_list:
+        proxy = random.choice(proxy_list)
         proxies = {"http": proxy, "https": proxy} if proxy else None
         try:
             response = requests.get(
@@ -33,7 +34,7 @@ def get_valid_proxy(proxies_list):
             logger.warning(f"代理 {proxy} 响应状态码: {response.status_code}")
         except Exception as e:
             logger.warning(f"代理 {proxy} 测试失败: {str(e)}")
-            proxies_list.remove(proxy)
+            proxy_list.remove(proxy)
     return None
 
 
@@ -52,8 +53,7 @@ def crawl_book_detail(book_id, book_url, db, retries=3):
         return True
 
     # 获取有效代理
-    proxy_list = PROXIES.copy()
-    proxy = get_valid_proxy(proxy_list)
+    proxy = get_valid_proxy(PROXIES)
     proxies = {"http": proxy, "https": proxy} if proxy else None
 
     for attempt in range(retries):
@@ -66,8 +66,7 @@ def crawl_book_detail(book_id, book_url, db, retries=3):
                 "Referer": "https://www.ciweimao.com/book_list",
             }
 
-            # 使用get_book_data函数爬取详情，传入代理
-            # 修改get_book_data函数接收代理参数
+            # 爬取详情
             book_data = get_book_data(book_url, proxies=proxies, headers=headers)
 
             # 保存到数据库
@@ -85,7 +84,7 @@ def crawl_book_detail(book_id, book_url, db, retries=3):
                 f"爬取书籍 {book_url} 详情失败，重试中... (尝试 {attempt + 1}/{retries})"
             )
             # 更换代理重试
-            proxy = get_valid_proxy(proxy_list)
+            proxy = get_valid_proxy(PROXIES)
             proxies = {"http": proxy, "https": proxy} if proxy else None
             time.sleep(random.uniform(1, 3))  # 随机延迟
 
@@ -141,10 +140,11 @@ def crawl_details_multi_thread(max_books=1000, max_workers=5):
 
 
 if __name__ == "__main__":
-    import sqlite3
-
     try:
-        # 可以根据需要调整参数
+        # 如果需要迁移旧数据，取消注释下面这行
+        # Database().migrate_details_to_flat_structure()
+
+        # 开始爬取详情
         crawl_details_multi_thread(max_books=5000, max_workers=5)
     except Exception as e:
         logger.error(f"程序运行出错: {str(e)}")

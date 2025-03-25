@@ -93,7 +93,7 @@ def get_book_data(url, proxies=None, headers=None):
 # 只在直接运行文件时执行示例
 if __name__ == "__main__":
     # 示例用法
-    url = "https://www.ciweimao.com/book/100019863"
+    url = "https://www.ciweimao.com/book/100430532"
     book_data = get_book_data(url)
     # 转为 json
     print(json.dumps(book_data, ensure_ascii=False, indent=4))
