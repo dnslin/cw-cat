@@ -1,6 +1,7 @@
 import time
 import random
 import traceback
+import argparse
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 import sqlite3
@@ -91,61 +92,117 @@ def crawl_book_detail(book_id, book_url, db, retries=3):
     return False
 
 
-def crawl_details_multi_thread(max_books=1000, max_workers=5):
-    """多线程爬取书籍详情"""
+def crawl_details_multi_thread(
+    batch_size=1000, max_workers=5, continuous=True, rest_time=60
+):
+    """多线程爬取书籍详情
+
+    参数:
+        batch_size: 每批爬取的数量
+        max_workers: 线程数
+        continuous: 是否持续爬取直到全部完成
+        rest_time: 每批爬取后的休息时间(秒)
+    """
     db = Database()
-    logger.info(f"准备爬取书籍详情，最大数量: {max_books}，线程数: {max_workers}")
+    total_success = 0
+    total_fail = 0
+    batch_count = 0
 
-    # 获取待爬取的书籍
-    books = db.get_uncrawled_books(limit=max_books)
-    if not books:
-        logger.info("没有需要爬取详情的书籍")
-        return
+    while True:
+        batch_count += 1
+        # 获取待爬取的书籍
+        books = db.get_uncrawled_books(limit=batch_size)
+        if not books:
+            logger.info("没有需要爬取详情的书籍，爬取完成")
+            break
 
-    logger.info(f"找到 {len(books)} 本需要爬取详情的书籍")
+        logger.info(f"第 {batch_count} 批: 找到 {len(books)} 本需要爬取详情的书籍")
 
-    success_count = 0
-    fail_count = 0
+        success_count = 0
+        fail_count = 0
 
-    # 使用线程池处理爬取任务
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # 创建任务列表
-        future_to_book = {
-            executor.submit(crawl_book_detail, book["id"], book["book_url"], db): book[
-                "book_url"
-            ]
-            for book in books
-        }
+        # 使用线程池处理爬取任务
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 创建任务列表
+            future_to_book = {
+                executor.submit(
+                    crawl_book_detail, book["id"], book["book_url"], db
+                ): book["book_url"]
+                for book in books
+            }
 
-        # 使用tqdm显示进度
-        with tqdm(total=len(books), desc="爬取书籍详情") as pbar:
-            for future in future_to_book:
-                book_url = future_to_book[future]
-                try:
-                    result = future.result()
-                    if result:
-                        success_count += 1
-                    else:
+            # 使用tqdm显示进度
+            with tqdm(total=len(books), desc=f"批次 {batch_count} 爬取进度") as pbar:
+                for future in future_to_book:
+                    book_url = future_to_book[future]
+                    try:
+                        result = future.result()
+                        if result:
+                            success_count += 1
+                        else:
+                            fail_count += 1
+                        pbar.set_description(
+                            f"批次 {batch_count}: {success_count}成功/{fail_count}失败"
+                        )
+                    except Exception as e:
+                        logger.error(f"处理书籍 {book_url} 时出现异常: {str(e)}")
                         fail_count += 1
-                    pbar.set_description(f"爬取: {success_count}成功/{fail_count}失败")
-                except Exception as e:
-                    logger.error(f"处理书籍 {book_url} 时出现异常: {str(e)}")
-                    fail_count += 1
-                finally:
-                    pbar.update(1)
-                    # 随机延迟，避免请求过快
-                    time.sleep(random.uniform(0.5, 1.5))
+                    finally:
+                        pbar.update(1)
+                        # 随机延迟，避免请求过快
+                        time.sleep(random.uniform(0.5, 1.5))
 
-    logger.info(f"爬取完成! 成功: {success_count}, 失败: {fail_count}")
+        total_success += success_count
+        total_fail += fail_count
+
+        logger.info(
+            f"第 {batch_count} 批爬取完成! 成功: {success_count}, 失败: {fail_count}"
+        )
+        logger.info(f"累计爬取: 成功 {total_success}, 失败 {total_fail}")
+
+        # 如果不是持续爬取模式，退出循环
+        if not continuous:
+            break
+
+        # 如果还有更多书籍要爬取，休息一段时间再继续
+        if books and rest_time > 0:
+            logger.info(f"休息 {rest_time} 秒后继续下一批爬取...")
+            time.sleep(rest_time)
+
+    logger.info(f"全部爬取任务结束! 总成功: {total_success}, 总失败: {total_fail}")
+
+
+def parse_args():
+    """解析命令行参数"""
+    parser = argparse.ArgumentParser(description="爬取书籍详情")
+    parser.add_argument("--batch-size", type=int, default=1000, help="每批爬取的数量")
+    parser.add_argument("--workers", type=int, default=5, help="线程数")
+    parser.add_argument(
+        "--no-continuous", action="store_true", help="不持续爬取，只爬取一批"
+    )
+    parser.add_argument("--rest", type=int, default=60, help="每批爬取后的休息时间(秒)")
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
     try:
-        # 如果需要迁移旧数据，取消注释下面这行
-        # Database().migrate_details_to_flat_structure()
+        args = parse_args()
+
+        logger.info(
+            f"开始爬取详情，配置: 批量={args.batch_size}, 线程={args.workers}, "
+            f"持续爬取={not args.no_continuous}, 休息时间={args.rest}秒"
+        )
 
         # 开始爬取详情
-        crawl_details_multi_thread(max_books=5000, max_workers=5)
+        crawl_details_multi_thread(
+            batch_size=args.batch_size,
+            max_workers=args.workers,
+            continuous=not args.no_continuous,
+            rest_time=args.rest,
+        )
+
+    except KeyboardInterrupt:
+        logger.info("用户中断，程序结束")
     except Exception as e:
         logger.error(f"程序运行出错: {str(e)}")
         logger.error(traceback.format_exc())
